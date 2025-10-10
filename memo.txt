@@ -1,0 +1,1 @@
+가상환경 venv 활성화 명령어 .\venv\Scripts\activate
