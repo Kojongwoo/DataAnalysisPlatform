@@ -33,7 +33,7 @@ class FileUploadView(APIView):
             else:
                 return Response({"error": "지원하지 않는 파일 형식입니다."}, status=400)
 
-            json_data = df.head().to_json(orient='split', force_ascii=False)
+            json_data = df.to_json(orient='split', force_ascii=False)
             return Response(json_data)
 
         except Exception as e:
