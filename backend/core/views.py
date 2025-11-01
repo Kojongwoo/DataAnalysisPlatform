@@ -33,8 +33,24 @@ class FileUploadView(APIView):
             else:
                 return Response({"error": "지원하지 않는 파일 형식입니다."}, status=400)
 
-            json_data = df.to_json(orient='split', force_ascii=False)
-            return Response(json_data)
+            # 1. 전체 테이블 데이터 (JSON 문자열)
+            # 결측치를 '-'로 표시 (JSON에서 null 대신)
+            table_json = df.fillna('-').to_json(orient='split', force_ascii=False)
+
+            # 2. 기초 통계량 데이터 (JSON 문자열)
+            # include='all' : 숫자형, 문자형 컬럼 모두에 대한 통계 생성
+            stats_df = df.describe(include='all')
+            # 통계량 테이블의 인덱스(count, mean 등)를 리셋하여 컬럼으로 만듦
+            stats_df = stats_df.reset_index() 
+            stats_json = stats_df.fillna('-').to_json(orient='split', force_ascii=False)
+
+            # 3. 두 데이터를 딕셔너리에 담아 응답
+            response_data = {
+                'tableData': table_json,
+                'statsData': stats_json
+            }
+            
+            return Response(response_data)
 
         except Exception as e:
             # Return the actual error message for easier debugging
