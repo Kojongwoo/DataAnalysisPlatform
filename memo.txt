@@ -7,3 +7,8 @@ python manage.py runserver
 프론트앤드 실행 명령어
 cd frontend
 npm run dev
+
+// 1102 결측치, 이상치 기능 추가
+결측치: Pandas의 .isnull.sum() 기능으로 개수셈
+이상치: 최소 경계 = Q1 - (1.5 & IQR), 최대 경계 = q3 + (1.5 * IQR), IQR = Q3 - Q1
+최소 경계 ~ 최대 경계를 벗어나는 모든 값을 이상치로 간주하여 개수를 셈
