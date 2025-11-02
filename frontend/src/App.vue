@@ -7,11 +7,28 @@
       데이터를 분석 중입니다...
     </div>
 
-    <div v-if="analysisResult" class="analysis-layout">
-      
+      <div v-if="analysisResult" class="analysis-layout">
+            <div class="table-frame">
+        <h2>업로드 된 셀</h2>
+        <div class="table-scroll-container">
+          <table>
+            <thead>
+              <tr>
+                <th v-for="column in analysisResult.tableData.columns" :key="column">{{ column }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, index) in analysisResult.tableData.data" :key="index">
+                <td v-for="(cell, cellIndex) in row" :key="cellIndex">{{ cell }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div> 
+
       <div class="stats-frame">
         <h2>기초 통계량</h2>
-        <div class="table-scroll-container small-table">
+        <div class="table-scroll-container">
           <table>
             <thead>
               <tr>
@@ -30,24 +47,32 @@
           </table>
         </div>
       </div>
+
+      <div class="quality-frame">
+        <h2>데이터 품질 (결측치 / 이상치)</h2>
+        <div class="table-scroll-container">
+          <table>
+            <thead>
+              <tr>
+                <th v-for="column in analysisResult.qualityData.columns" :key="column">
+                  {{ column }}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, index) in analysisResult.qualityData.data" :key="index">
+                <td v-for="(cell, cellIndex) in row" :key="cellIndex">
+                  {{ cell }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     
 
-    <div v-if="analysisResult" class="table-frame">
-      <h2>업로드 된 셀</h2>
-      <div class="table-scroll-container">
-        <table>
-          <thead>
-            <tr>
-              <th v-for="column in analysisResult.tableData.columns" :key="column">{{ column }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(row, index) in analysisResult.tableData.data" :key="index">
-              <td v-for="(cell, cellIndex) in row" :key="cellIndex">{{ cell }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div> </div> </div> </main>
+    
+    </div> </main>
 </template>
 
 <script setup>
@@ -80,14 +105,15 @@ const handleFileUpload = async (event) => {
     // 백엔드에서 보낸 딕셔너리 데이터를 파싱
     const tableData = JSON.parse(response.data.tableData);
     const statsData = JSON.parse(response.data.statsData);
+    const qualityData = JSON.parse(response.data.qualityData); // 새로 추가
 
     // 파싱된 두 데이터를 analysisResult 객체에 저장
     analysisResult.value = {
       tableData: tableData,
-      statsData: statsData
+      statsData: statsData,
+      qualityData: qualityData
     };
 
-    
   } catch (error) {
     console.error('파일 업로드 오류:', error);
     alert('파일을 업로드하는 데 실패했습니다.');
@@ -106,7 +132,6 @@ main {
 .analysis-layout {
   display: grid;
   /* 1fr 2fr : 통계량 틀이 1, 데이터 틀이 2의 비율로 공간 차지 */
-
   gap: 20px; /* 두 틀 사이의 간격 */
   margin-top: 20px;
 }
@@ -117,7 +142,7 @@ main {
   color: #555;
 }
 
-.table-frame, .stats-frame {
+.table-frame, .stats-frame, .quality-frame {
   border: 1px solid #534f4f; /* 프레임 테두리*/
   padding: 15px;
   margin-top: 20px;
@@ -127,7 +152,7 @@ main {
   flex-direction: column;
 }
 
-.table-frame h2, .stats-frame h2 {
+.table-frame h2, .stats-frame h2, .quality-frame h2 {
   margin-bottom: 10px;
 }
 
@@ -141,6 +166,13 @@ main {
 /* .stats-frame .table-scroll-container {
   max-height: 300px; 
 } */
+
+/* '기초 통계량'과 '데이터 품질' 테이블은 스크롤 없이 모두 표시 */
+.stats-frame .table-scroll-container,
+.quality-frame .table-scroll-container {
+  max-height: none; /* 높이 제한 없음 */
+  overflow: auto; /* 내용이 넘칠 경우에만 스크롤 (주로 가로 스크롤) */
+}
 
 /* 간단한 스타일링 */
 table {
@@ -160,5 +192,4 @@ th {
   top: 0;
   z-index: 1;
 }
-
 </style>
