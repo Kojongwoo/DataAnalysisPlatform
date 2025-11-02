@@ -2,6 +2,7 @@
 
 import pandas as pd
 import io # <--- Make sure to import this
+import numpy as np
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser
@@ -33,21 +34,58 @@ class FileUploadView(APIView):
             else:
                 return Response({"error": "지원하지 않는 파일 형식입니다."}, status=400)
 
-            # 1. 전체 테이블 데이터 (JSON 문자열)
-            # 결측치를 '-'로 표시 (JSON에서 null 대신)
+            # 1. 전체 테이블 데이터
             table_json = df.fillna('-').to_json(orient='split', force_ascii=False)
 
-            # 2. 기초 통계량 데이터 (JSON 문자열)
-            # include='all' : 숫자형, 문자형 컬럼 모두에 대한 통계 생성
-            stats_df = df.describe(include='all')
-            # 통계량 테이블의 인덱스(count, mean 등)를 리셋하여 컬럼으로 만듦
-            stats_df = stats_df.reset_index() 
+            # 2. 기초 통계량 데이터
+            stats_df = df.describe(include='all').reset_index()
             stats_json = stats_df.fillna('-').to_json(orient='split', force_ascii=False)
 
-            # 3. 두 데이터를 딕셔너리에 담아 응답
+            # 3. 데이터 품질 데이터 (결측치, 이상치) (NEW)
+            total_rows = len(df)
+            
+            # (A) 결측치 계산
+            missing_counts = df.isnull().sum()
+            missing_percent = (missing_counts / total_rows * 100).round(2)
+            
+            # (B) 이상치 계산 (IQR 방식, 숫자형 컬럼에만 적용)
+            outlier_counts = pd.Series('-', index=df.columns)
+            outlier_percent = pd.Series('-', index=df.columns)
+            
+            numeric_cols = df.select_dtypes(include=[np.number]).columns
+            
+            for col in numeric_cols:
+                Q1 = df[col].quantile(0.25)
+                Q3 = df[col].quantile(0.75)
+                IQR = Q3 - Q1
+                lower_bound = Q1 - (1.5 * IQR)
+                upper_bound = Q3 + (1.5 * IQR)
+                
+                # 이상치 개수 계산
+                count = ((df[col] < lower_bound) | (df[col] > upper_bound)).sum()
+                outlier_counts[col] = count
+                outlier_percent[col] = (count / total_rows * 100).round(2)
+                
+            # (C) 품질 데이터프레임 생성
+            quality_df = pd.DataFrame({
+                '결측치 개수': missing_counts,
+                '결측치 비율(%)': missing_percent,
+                '이상치 개수': outlier_counts,
+                '이상치 비율(%)': outlier_percent
+            })
+            
+            # 행/열 전환 후 'index' 컬럼을 '구분'으로 이름 변경
+            quality_df = quality_df.transpose().reset_index()
+            quality_df.rename(columns={'index': '구분'}, inplace=True)
+            
+            quality_json = quality_df.fillna('-').to_json(orient='split', force_ascii=False)
+
+
+            # 4. 세 가지 데이터를 딕셔너리에 담아 응답
             response_data = {
                 'tableData': table_json,
-                'statsData': stats_json
+                'statsData': stats_json,
+                'qualityData': quality_json # 새로 추가
             }
             
             return Response(response_data)
