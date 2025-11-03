@@ -129,5 +129,29 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # 허용할 프론트엔드 서버의 주소 목록
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
-    "http://127.0.0.1:8000",
+    "http://127.0.0.1:5173",
 ]
+# 2. 쿠키(Credentials)를 허용합니다. (가장 중요!)
+CORS_ALLOW_CREDENTIALS = True
+
+# 3. (선택 사항이지만 권장) CSRF 검증을 위해 Vue 앱의 Origin을 신뢰합니다.
+#    CORS와 별개로 CSRF 403 오류를 예방할 수 있습니다.
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+# --- 세션 쿠키 SameSite 설정 (핵심!) ---
+
+# 1. SameSite 정책을 'None'으로 설정
+#    -> 'None'은 Cross-Origin 요청(예: Vue->Django)에도 쿠키를 보내도록 허용
+SESSION_COOKIE_SAMESITE = 'None'
+
+# 2. Secure 플래그 비활성화 (개발 환경이 http:// 이기 때문)
+#    -> 'SameSite=None'은 원래 https:// (Secure) 환경에서만 작동하지만,
+#    -> 개발을 위해 http:// 에서도 작동하도록 임시 허용
+SESSION_COOKIE_SECURE = False
+
+# 3. CSRF 쿠키도 동일하게 설정 (세션과 맞춰주는 것이 좋음)
+CSRF_COOKIE_SAMESITE = 'None'
+CSRF_COOKIE_SECURE = False

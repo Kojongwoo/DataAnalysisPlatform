@@ -69,8 +69,16 @@
           </table>
         </div>
       </div>
-    
 
+      <div class="preprocessing-frame">
+        <h2>데이터 전처리</h2>
+        <p>데이터를 수정/편집합니다. (실행 시 모든 통계와 테이블이 갱신됩니다.)</p>
+        <div class="button-group">
+          <button @click="handleProcess('drop_na')" :disabled="isLoading">
+            결측치가 있는 행 전체 제거
+          </button>
+          </div>
+      </div>
     
     </div> </main>
 </template>
@@ -83,42 +91,70 @@ import axios from 'axios';
 const analysisResult = ref(null);
 const isLoading = ref(false); // 로딩 상태 추가
 
+// --- 공통 응답 처리 함수 (새로 추가) ---
+// 백엔드가 보낸 3종류의 데이터를 파싱하여 analysisResult에 저장
+const updateAnalysisData = (responseData) => {
+  const tableData = JSON.parse(responseData.tableData);
+  const statsData = JSON.parse(responseData.statsData);
+  const qualityData = JSON.parse(responseData.qualityData);
+
+  analysisResult.value = {
+    tableData: tableData,
+    statsData: statsData,
+    qualityData: qualityData
+  };
+};
+
+// --- 파일 업로드 핸들러 (수정) ---
 const handleFileUpload = async (event) => {
   const file = event.target.files[0];
   if (!file) return;
 
-  // FormData 객체를 사용해 파일을 감쌉니다.
   const formData = new FormData();
   formData.append('file', file);
 
-  // 이전에 표시되던 데이터 초기화
   analysisResult.value = null;
-  isLoading.value = true; // 로딩 시작
+  isLoading.value = true; 
 
   try {
-    // axios를 사용해 Django API 서버로 POST 요청을 보냅니다.
-    const response = await axios.post('http://127.0.0.1:8000/api/v1/upload/', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
+    // 💡 여기를 수정!
+    const response = await axios.post('http://localhost:8000/api/v1/upload/', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      withCredentials: true // 💡 upload에도 추가!
     });
-    // 백엔드에서 보낸 딕셔너리 데이터를 파싱
-    const tableData = JSON.parse(response.data.tableData);
-    const statsData = JSON.parse(response.data.statsData);
-    const qualityData = JSON.parse(response.data.qualityData); // 새로 추가
-
-    // 파싱된 두 데이터를 analysisResult 객체에 저장
-    analysisResult.value = {
-      tableData: tableData,
-      statsData: statsData,
-      qualityData: qualityData
-    };
-
+    // 공통 함수를 호출하여 데이터 갱신
+    updateAnalysisData(response.data);
+    
   } catch (error) {
     console.error('파일 업로드 오류:', error);
     alert('파일을 업로드하는 데 실패했습니다.');
   } finally {
-    isLoading.value = false; // 로딩 끝
+    isLoading.value = false;
+  }
+};
+
+// --- 전처리 핸들러 (새로 추가) ---
+const handleProcess = async (actionName) => {
+  if (isLoading.value) return; // 이미 로딩 중이면 중복 실행 방지
+
+  isLoading.value = true;
+  
+try {
+    // 💡 여기도 수정!
+    const response = await axios.post('http://localhost:8000/api/v1/process/', {
+      action: actionName
+    }, {
+      withCredentials: true 
+    });
+
+    // 공통 함수를 호출하여 갱신된 데이터로 화면 전체를 새로고침
+    updateAnalysisData(response.data);
+
+  } catch (error) {
+    console.error('데이터 처리 오류:', error);
+    alert(`데이터 처리에 실패했습니다: ${error.response?.data?.error || error.message}`);
+  } finally {
+    isLoading.value = false;
   }
 };
 </script>
@@ -139,9 +175,10 @@ main {
 .loading-spinner {
   margin-top: 20px;
   font-size: 1.2em;
-  color: #555;
+  color: #fbf3f3ff;
 }
 
+/* 틀 공통 스타일 */
 .table-frame, .stats-frame, .quality-frame {
   border: 1px solid #534f4f; /* 프레임 테두리*/
   padding: 15px;
@@ -155,6 +192,34 @@ main {
 .table-frame h2, .stats-frame h2, .quality-frame h2 {
   margin-bottom: 10px;
 }
+
+/* --- 전처리 '틀' 스타일 (새로 추가) --- */
+.preprocessing-frame p {
+  font-size: 0.9em;
+  color: #aaa;
+  margin-bottom: 15px;
+}
+.button-group {
+  display: flex;
+  gap: 10px;
+}
+.preprocessing-frame button {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+}
+.preprocessing-frame button:hover {
+  background-color: #0056b3;
+}
+.preprocessing-frame button:disabled {
+  background-color: #555;
+  cursor: not-allowed;
+}
+/* --- 스타일 추가 끝 --- */
 
 /* 테이블 스크롤을 담당하는 컨테이너 */
 .table-scroll-container {
