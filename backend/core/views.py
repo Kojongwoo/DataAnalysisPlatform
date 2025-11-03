@@ -85,78 +85,68 @@ class FileUploadView(APIView):
             return Response({"error": "파일이 없습니다."}, status=400)
 
         try:
-            # Read the file content into an in-memory buffer
-            # This makes it easier and safer to read multiple times
             file_buffer = io.BytesIO(file_obj.read())
 
             if file_obj.name.endswith(('.xls', '.xlsx')):
                 df = pd.read_excel(file_buffer)
             elif file_obj.name.endswith('.csv'):
                 try:
-                    # 1st attempt: UTF-8
                     df = pd.read_csv(file_buffer)
                 except UnicodeDecodeError:
-                    # 2nd attempt: CP949 (for Korean Windows files)
-                    file_buffer.seek(0) # IMPORTANT: Go back to the start of the buffer
+                    file_buffer.seek(0)
                     df = pd.read_csv(file_buffer, encoding='cp949')
             else:
                 return Response({"error": "지원하지 않는 파일 형식입니다."}, status=400)
 
-            # 1. DataFrame을 JSON으로 변환하여 세션에 저장
-            request.session['dataframe'] = df.to_json(orient='split', force_ascii=False)
+            # 💡 1. 세션에 저장하는 코드 (삭제)
+            # request.session['dataframe'] = df.to_json(orient='split', force_ascii=False)
             
             # 2. 헬퍼 함수를 호출하여 분석 결과 받기
             response_data = _analyze_dataframe(df)
             
-            # 3. 분석 결과 응답
+            # 💡 3. 원본 DataFrame(JSON)을 응답에 추가
+            response_data['fullData'] = df.to_json(orient='split', force_ascii=False)
+            
             return Response(response_data)
-            # --- 수정 끝 ---
 
         except Exception as e:
             return Response({"error": f"파일 처리 중 서버 오류 발생: {str(e)}"}, status=500)
 
-# --- 새로운 View 클래스 (전체 추가) ---
+# --- ProcessDataView (수정) ---
 class ProcessDataView(APIView):
-    """
-    세션에 저장된 데이터를 처리하고 갱신된 분석 결과를 반환하는 View
-    """
     parser_classes = (JSONParser,)
-
+    
     def post(self, request, *args, **kwargs):
-        # 1. 세션에서 DataFrame JSON 불러오기
-        df_json = request.session.get('dataframe')
+        # 💡 1. 세션에서 불러오는 대신, request.data에서 직접 받기
+        df_json = request.data.get('dataframe')
+        action = request.data.get('action')
+
         if not df_json:
-            return Response({"error": "세션에 데이터가 없습니다. 파일을 다시 업로드해주세요."}, status=400)
+            return Response({"error": "DataFrame이 요청에 포함되지 않았습니다."}, status=400)
         
         try:
             # 2. DataFrame 복원
             df = pd.read_json(io.StringIO(df_json), orient='split')
             
-            # 3. 프론트엔드에서 요청한 작업(action) 가져오기
-            action = request.data.get('action')
-
-            # 4. 작업(action)에 따라 데이터 처리
+            # 3. 작업(action)에 따라 데이터 처리
             if action == 'drop_na':
-                # 결측치가 있는 행 제거
                 original_rows = len(df)
                 df = df.dropna()
                 processed_rows = len(df)
                 print(f"결측치 행 제거: {original_rows} -> {processed_rows} (총 {original_rows - processed_rows}개 행 제거)")
             
-            # (나중에 다른 전처리 기능 else if로 추가...)
-            # elif action == '...':
-            #     pass
-
             else:
                 return Response({"error": "알 수 없는 작업 요청입니다."}, status=400)
 
-            # 5. 처리된 DataFrame을 다시 세션에 덮어쓰기
-            request.session['dataframe'] = df.to_json(orient='split', force_ascii=False)
+            # 💡 4. 세션에 덮어쓰는 코드 (삭제)
+            # request.session['dataframe'] = df.to_json(orient='split', force_ascii=False)
             
-            # 6. 헬퍼 함수를 사용해 갱신된 분석 결과 생성
+            # 5. 헬퍼 함수를 사용해 갱신된 분석 결과 생성
             response_data = _analyze_dataframe(df)
             
-            # 7. 갱신된 데이터 응답
+            # 💡 6. 갱신된 원본 DataFrame(JSON)을 응답에 추가
+            response_data['fullData'] = df.to_json(orient='split', force_ascii=False)
+            
             return Response(response_data)
 
         except Exception as e:
