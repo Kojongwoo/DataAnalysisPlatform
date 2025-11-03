@@ -91,6 +91,9 @@ import axios from 'axios';
 const analysisResult = ref(null);
 const isLoading = ref(false); // 로딩 상태 추가
 
+// 💡 1. 서버와 주고받을 원본 DataFrame(JSON 문자열)을 저장할 ref
+const fullDataJson = ref(null);
+
 // --- 공통 응답 처리 함수 (새로 추가) ---
 // 백엔드가 보낸 3종류의 데이터를 파싱하여 analysisResult에 저장
 const updateAnalysisData = (responseData) => {
@@ -103,6 +106,10 @@ const updateAnalysisData = (responseData) => {
     statsData: statsData,
     qualityData: qualityData
   };
+  // 💡 2. 응답받은 원본 데이터를 ref에 저장
+  if (responseData.fullData) {
+    fullDataJson.value = responseData.fullData;
+  }
 };
 
 // --- 파일 업로드 핸들러 (수정) ---
@@ -115,9 +122,9 @@ const handleFileUpload = async (event) => {
 
   analysisResult.value = null;
   isLoading.value = true; 
+  fullDataJson.value = null; // 💡 새 파일 업로드 시 초기화
 
   try {
-    // 💡 여기를 수정!
     const response = await axios.post('http://localhost:8000/api/v1/upload/', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       withCredentials: true // 💡 upload에도 추가!
@@ -137,17 +144,24 @@ const handleFileUpload = async (event) => {
 const handleProcess = async (actionName) => {
   if (isLoading.value) return; // 이미 로딩 중이면 중복 실행 방지
 
+  // 💡 3. 전송할 원본 데이터가 없으면 실행 중지
+  if (!fullDataJson.value) {
+    alert("처리할 원본 데이터가 없습니다. 파일을 다시 업로드해주세요.");
+    return;
+  }
+
   isLoading.value = true;
   
-try {
-    // 💡 여기도 수정!
+  try {
+    // 💡 4. 요청 시, 저장해둔 원본 데이터를 'dataframe' 키에 실어 전송
     const response = await axios.post('http://localhost:8000/api/v1/process/', {
-      action: actionName
+      action: actionName,
+      dataframe: fullDataJson.value // 💡 <--- 핵심 변경점
     }, {
-      withCredentials: true 
+      withCredentials: true // (이제 세션 안 쓰지만, 그냥 둬도 됩니다)
     });
 
-    // 공통 함수를 호출하여 갱신된 데이터로 화면 전체를 새로고침
+    // 5. 서버로부터 갱신된 데이터를 받아 화면 전체를 새로고침
     updateAnalysisData(response.data);
 
   } catch (error) {
