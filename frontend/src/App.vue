@@ -85,10 +85,13 @@
           <div class="action-section">
             <h3>대체 (Imputation)</h3>
             <button @click="handleProcess('fill_na_mean')" :disabled="isLoading">
-              평균값으로 채우기
+              평균값 (숫자형)
             </button>
             <button @click="handleProcess('fill_na_median')" :disabled="isLoading">
-              중앙값으로 채우기
+              중앙값 (숫자형)
+            </button>
+            <button @click="handleProcess('fill_na_mode')" :disabled="isLoading">
+              최빈값 (범주형/모두)
             </button>
             <button @click="handleProcess('fill_na_zero')" :disabled="isLoading">
               0으로 채우기

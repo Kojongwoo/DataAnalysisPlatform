@@ -1,58 +1,85 @@
 # backend/core/views.py
 
 import pandas as pd
-import io # <--- Make sure to import this
+import io
 import numpy as np
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, JSONParser
 
-# --- 헬퍼 함수 (새로 추가) ---
-# 데이터프레임을 받아 3종류의 분석 JSON을 반환하는 함수
+# --- 헬퍼 함수 ---
 def _analyze_dataframe(df):
     """
     주어진 DataFrame을 분석하여 table, stats, quality JSON을 반환합니다.
     """
     # 1. 전체 테이블 데이터
-    table_json = df.fillna('-').to_json(orient='split', force_ascii=False)
+    table_json = df.astype(object).fillna('-').to_json(orient='split', force_ascii=False)
 
-    # 2. 기초 통계량 데이터
-    stats_df = df.describe(include='all').reset_index()
-    stats_json = stats_df.fillna('-').to_json(orient='split', force_ascii=False)
+    # --- 💡 2. 기초 통계량 데이터 (수정됨) ---
+    # (1) 기본 describe 수행
+    stats_df = df.describe(include='all')
+    
+    # (2) 데이터 타입(Data Type) 행 생성
+    # 각 컬럼이 수치형인지 아닌지 판별
+    dtype_data = {}
+    for col in df.columns:
+        if pd.api.types.is_numeric_dtype(df[col]):
+            dtype_data[col] = 'Numeric (수치형)'
+        else:
+            dtype_data[col] = 'Categorical (범주형)'
+            
+    # DataFrame으로 변환 (인덱스 이름은 'Data Type')
+    dtype_df = pd.DataFrame([dtype_data], index=['Data Type'])
+    
+    # (3) 기존 통계량 맨 위에 'Data Type' 행 합치기
+    stats_df = pd.concat([dtype_df, stats_df])
+    
+    # (4) 인덱스 초기화 및 JSON 변환 (기존 로직)
+    stats_df = stats_df.reset_index() # 'index' 컬럼이 생성됨 (Data Type, count, mean...)
+    stats_df.rename(columns={'index': '구분'}, inplace=True) # 보기 좋게 이름 변경
+    
+    stats_json = stats_df.astype(object).fillna('-').to_json(orient='split', force_ascii=False)
+    # --------------------------------------
 
     # 3. 데이터 품질 데이터
     total_rows = len(df)
     
     missing_counts = df.isnull().sum()
 
-    # --- 💡 수정된 부분 (0으로 나누기 방지) ---
     if total_rows > 0:
         missing_percent = (missing_counts / total_rows * 100).round(2)
     else:
         missing_percent = pd.Series(0.0, index=df.columns)
-    # --- 수정 끝 ---
     
     outlier_counts = pd.Series('-', index=df.columns)
     outlier_percent = pd.Series('-', index=df.columns)
     
-    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    # 수치형 변환 시도 (이상치 계산을 위해)
+    # object 타입이라도 숫자로 변환 가능하다면 변환해서 계산
+    # 💡 수정: errors='ignore' 대신 coerce로 강제 변환 후 수치형만 선택
+    df_numeric = df.copy()
+    for col in df_numeric.columns:
+        try:
+            df_numeric[col] = pd.to_numeric(df_numeric[col], errors='coerce')
+        except:
+            pass
+            
+    numeric_cols = df_numeric.select_dtypes(include=[np.number]).columns
     
     for col in numeric_cols:
-        Q1 = df[col].quantile(0.25)
-        Q3 = df[col].quantile(0.75)
+        Q1 = df_numeric[col].quantile(0.25)
+        Q3 = df_numeric[col].quantile(0.75)
         IQR = Q3 - Q1
         lower_bound = Q1 - (1.5 * IQR)
         upper_bound = Q3 + (1.5 * IQR)
         
-        count = ((df[col] < lower_bound) | (df[col] > upper_bound)).sum()
+        count = ((df_numeric[col] < lower_bound) | (df_numeric[col] > upper_bound)).sum()
         outlier_counts[col] = count
 
-        # --- 💡 수정된 부분 (0으로 나누기 방지) ---
         if total_rows > 0:
             outlier_percent[col] = (count / total_rows * 100).round(2)
         else:
             outlier_percent[col] = 0.0
-        # --- 수정 끝 ---
         
     quality_df = pd.DataFrame({
         '결측치 개수': missing_counts,
@@ -66,9 +93,9 @@ def _analyze_dataframe(df):
 
     quality_df.replace(np.nan, '-', inplace=True)
     
-    quality_json = quality_df.fillna('-').to_json(orient='split', force_ascii=False)
+    # 💡 수정: 경고 방지
+    quality_json = quality_df.astype(object).fillna('-').to_json(orient='split', force_ascii=False)
 
-    # 4. 3가지 데이터를 딕셔너리에 담아 반환
     return {
         'tableData': table_json,
         'statsData': stats_json,
@@ -98,13 +125,7 @@ class FileUploadView(APIView):
             else:
                 return Response({"error": "지원하지 않는 파일 형식입니다."}, status=400)
 
-            # 💡 1. 세션에 저장하는 코드 (삭제)
-            # request.session['dataframe'] = df.to_json(orient='split', force_ascii=False)
-            
-            # 2. 헬퍼 함수를 호출하여 분석 결과 받기
             response_data = _analyze_dataframe(df)
-            
-            # 💡 3. 원본 DataFrame(JSON)을 응답에 추가
             response_data['fullData'] = df.to_json(orient='split', force_ascii=False)
             
             return Response(response_data)
@@ -112,7 +133,6 @@ class FileUploadView(APIView):
         except Exception as e:
             return Response({"error": f"파일 처리 중 서버 오류 발생: {str(e)}"}, status=500)
 
-# --- ProcessDataView (수정) ---
 class ProcessDataView(APIView):
     parser_classes = (JSONParser,)
     
@@ -128,38 +148,58 @@ class ProcessDataView(APIView):
             df = pd.read_json(io.StringIO(df_json), orient='split')
             original_rows = len(df)
             
-            # --- 💡 수정 및 추가된 부분 시작 ---
+            # 1. 빈 문자열 -> NaN 치환
+            df.replace("", np.nan, inplace=True)
+
+            # 2. 수치형 변환 시도
+            for col in df.columns:
+                try:
+                    df[col] = pd.to_numeric(df[col])
+                except (ValueError, TypeError):
+                    pass
+
             if action == 'drop_na':
                 df = df.dropna()
                 print(f"결측치 행 제거: {original_rows} -> {len(df)}")
             
-            elif action == 'fill_na_mean':  # 1. 평균값으로 채우기
-                # 수치형 컬럼만 선택
+            elif action == 'fill_na_mean':
                 numeric_cols = df.select_dtypes(include=[np.number]).columns
-                # 수치형 컬럼의 결측치를 해당 컬럼의 '평균'으로 채움
-                df[numeric_cols] = df[numeric_cols].fillna(df[numeric_cols].mean())
-                print("결측치 평균값 대체 완료")
+                if len(numeric_cols) > 0:
+                    df[numeric_cols] = df[numeric_cols].fillna(df[numeric_cols].mean())
+                    print(f"수치형 컬럼 평균값 대체 완료: {list(numeric_cols)}")
+                # 💡 주의: 문자열 컬럼은 여기서 처리되지 않음
 
-            elif action == 'fill_na_median': # 2. 중앙값으로 채우기
+            elif action == 'fill_na_median':
                 numeric_cols = df.select_dtypes(include=[np.number]).columns
-                # 수치형 컬럼의 결측치를 해당 컬럼의 '중앙값'으로 채움
-                df[numeric_cols] = df[numeric_cols].fillna(df[numeric_cols].median())
-                print("결측치 중앙값 대체 완료")
+                if len(numeric_cols) > 0:
+                    df[numeric_cols] = df[numeric_cols].fillna(df[numeric_cols].median())
+                    print(f"수치형 컬럼 중앙값 대체 완료: {list(numeric_cols)}")
 
-            elif action == 'fill_na_zero':   # 3. 0으로 채우기
-                # 모든 컬럼의 결측치를 0으로 채움
+            # --- 💡 [신규 추가] 최빈값(Mode)으로 채우기 ---
+            elif action == 'fill_na_mode':
+                # 모든 컬럼을 순회하며 결측치가 있으면 최빈값으로 채움
+                filled_cols = []
+                for col in df.columns:
+                    if df[col].isnull().sum() > 0:
+                        # 최빈값이 여러 개일 수 있으므로 첫 번째([0])를 선택
+                        mode_value = df[col].mode()[0]
+                        df[col] = df[col].fillna(mode_value)
+                        filled_cols.append(col)
+                print(f"최빈값 대체 완료 (대상 컬럼): {filled_cols}")
+
+            elif action == 'fill_na_zero':
                 df.fillna(0, inplace=True)
-                print("결측치 0으로 대체 완료")
+                print("모든 컬럼 0으로 대체 완료")
             
             else:
                 return Response({"error": "알 수 없는 작업 요청입니다."}, status=400)
-            # --- 💡 수정 및 추가된 부분 끝 ---
 
-            # 갱신된 분석 결과 생성
             response_data = _analyze_dataframe(df)
             response_data['fullData'] = df.to_json(orient='split', force_ascii=False)
             
             return Response(response_data)
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return Response({"error": f"데이터 처리 중 서버 오류 발생: {str(e)}"}, status=500)
