@@ -50,6 +50,15 @@
         </div>
       </div>
 
+      <div v-if="analysisResult" class="analysis-layout">
+        <div class="chart-frame">
+          <DataChart :tableData="analysisResult.tableData" />
+        </div>
+
+        <div class="table-frame">
+          </div>
+      </div>
+
       <div class="quality-frame">
         <h2>데이터 품질 (결측치 / 이상치)</h2>
         <div class="table-scroll-container">
@@ -101,6 +110,7 @@
 <script setup>
 import { ref } from 'vue';
 import axios from 'axios';
+import DataChart from './components/DataChart.vue'
 
 // 서버로부터 받은 테이블 데이터를 저장할 변수
 const analysisResult = ref(null);
@@ -187,6 +197,7 @@ const handleProcess = async (actionName) => {
   }
 };
 </script>
+
 
 <style>
 /* 💡 main 태그가 화면 전체를 쓰도록 수정 */
