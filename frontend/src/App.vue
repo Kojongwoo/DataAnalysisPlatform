@@ -55,8 +55,6 @@
           <DataChart :tableData="analysisResult.tableData" />
         </div>
 
-        <div class="table-frame">
-          </div>
       </div>
 
       <div class="quality-frame">
@@ -103,9 +101,6 @@
 
         </div>
       </div>
-
-<div class="preprocessing-frame">
-        </div>
 
       <div class="training-frame">
         <h2>머신러닝 모델 학습 (Prediction)</h2>

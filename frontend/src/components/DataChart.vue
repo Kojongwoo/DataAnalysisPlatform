@@ -1,22 +1,48 @@
 <template>
   <div class="chart-container">
     <div class="chart-header">
-      <h3>데이터 분포 시각화 (Histogram)</h3>
-      <div class="controls">
-        <label>컬럼 선택: </label>
-        <select v-model="selectedColumn" @change="updateChart">
-          <option v-for="col in numericColumns" :key="col" :value="col">
-            {{ col }}
-          </option>
-        </select>
+      <h3>데이터 시각화 ({{ chartTypeLabel }})</h3>
+      
+      <div class="controls-row">
+        <div class="control-group">
+          <label>차트 유형</label>
+          <select v-model="chartType" class="form-select">
+            <option value="histogram">히스토그램 (분포)</option>
+            <option value="scatter">산점도 (관계)</option>
+            <option value="line">선 그래프 (추세)</option>
+            <option value="pie">파이 차트 (비율)</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label>{{ columnLabel1 }}</label>
+          <select v-model="selectedColumn1" class="form-select">
+            <option v-for="col in availableColumns1" :key="col" :value="col">
+              {{ col }}
+            </option>
+          </select>
+        </div>
+
+        <div class="control-group" v-if="chartType === 'scatter'">
+          <label>Y축 컬럼 (Target)</label>
+          <select v-model="selectedColumn2" class="form-select">
+            <option v-for="col in numericColumns" :key="col" :value="col">
+              {{ col }}
+            </option>
+          </select>
+        </div>
       </div>
     </div>
     
     <div class="canvas-wrapper" v-if="chartData">
-      <Bar :data="chartData" :options="chartOptions" />
+      <component 
+        :is="chartComponent" 
+        :data="chartData" 
+        :options="chartOptions" 
+      />
     </div>
     <div v-else class="no-data">
-      시각화할 수치형 컬럼을 선택해주세요.
+      데이터를 시각화할 컬럼을 선택해주세요.
     </div>
   </div>
 </template>
@@ -29,13 +55,26 @@ import {
   Tooltip,
   Legend,
   BarElement,
+  LineElement,
+  PointElement,
+  ArcElement,
   CategoryScale,
   LinearScale
 } from 'chart.js'
-import { Bar } from 'vue-chartjs'
+import { Bar, Line, Scatter, Pie } from 'vue-chartjs'
 
-// Chart.js 필수 모듈 등록
-ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
+// Chart.js 모듈 등록 (다양한 차트를 위해 필수 요소 추가)
+ChartJS.register(
+  CategoryScale, 
+  LinearScale, 
+  BarElement, 
+  LineElement, 
+  PointElement, 
+  ArcElement,
+  Title, 
+  Tooltip, 
+  Legend
+)
 
 const props = defineProps({
   tableData: {
@@ -44,155 +83,326 @@ const props = defineProps({
   }
 })
 
-const selectedColumn = ref('')
+// --- 상태 변수 ---
+const chartType = ref('histogram')
+const selectedColumn1 = ref('')
+const selectedColumn2 = ref('')
 const chartData = ref(null)
 
-// 차트 디자인 옵션
-const chartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: { display: false }, // 히스토그램은 범례 불필요
-    tooltip: {
-      callbacks: {
-        label: (context) => `빈도수: ${context.raw}개`
-      }
-    }
-  },
-  scales: {
-    y: {
-      beginAtZero: true,
-      title: { display: true, text: 'Frequency (빈도)' }
-    },
-    x: {
-      title: { display: true, text: 'Value Range (값 구간)' }
-    }
-  }
-}
+// --- Computed Properties ---
 
-// 수치형 컬럼만 필터링 (첫 번째 행 데이터를 보고 판단)
+// 1. 수치형 컬럼 필터링
 const numericColumns = computed(() => {
   if (!props.tableData || !props.tableData.columns) return []
-  
   const columns = props.tableData.columns
   const firstRow = props.tableData.data[0] || []
   
   return columns.filter((col, index) => {
     const val = firstRow[index]
-    // 값이 숫자이거나, 숫자로 변환 가능한 문자열인 경우
     return !isNaN(parseFloat(val)) && isFinite(val)
   })
 })
 
-// 데이터가 변경되면(전처리 후) 차트도 갱신
-watch(() => props.tableData, () => {
-  // 현재 선택된 컬럼이 유효하다면 차트 갱신, 아니면 첫번째 수치형 컬럼 선택
-  if (numericColumns.value.length > 0) {
-    if (!selectedColumn.value || !numericColumns.value.includes(selectedColumn.value)) {
-      selectedColumn.value = numericColumns.value[0]
-    }
-    updateChart()
-  }
-}, { deep: true })
+// 2. 모든 컬럼 (파이 차트용)
+const allColumns = computed(() => {
+  return props.tableData?.columns || []
+})
 
-// 초기 로딩 시 첫번째 컬럼 자동 선택
-onMounted(() => {
-  if (numericColumns.value.length > 0) {
-    selectedColumn.value = numericColumns.value[0]
-    updateChart()
+// 3. 첫 번째 선택 박스에 표시할 컬럼 목록
+const availableColumns1 = computed(() => {
+  // 파이 차트는 범주형도 가능하므로 모든 컬럼 표시
+  if (chartType.value === 'pie') return allColumns.value
+  // 그 외(히스토그램, 산점도, 선)는 수치형만
+  return numericColumns.value
+})
+
+// 4. 현재 차트 타입에 맞는 컴포넌트 반환
+const chartComponent = computed(() => {
+  switch (chartType.value) {
+    case 'histogram': return Bar
+    case 'scatter': return Scatter
+    case 'line': return Line
+    case 'pie': return Pie
+    default: return Bar
   }
 })
 
+// 5. 라벨 텍스트 동적 변경
+const chartTypeLabel = computed(() => {
+  const map = {
+    histogram: 'Histogram',
+    scatter: 'Scatter Plot',
+    line: 'Line Chart',
+    pie: 'Pie Chart'
+  }
+  return map[chartType.value]
+})
+
+const columnLabel1 = computed(() => {
+  if (chartType.value === 'scatter') return 'X축 컬럼'
+  if (chartType.value === 'pie') return '범주(Category) 컬럼'
+  return '대상 컬럼'
+})
+
+// --- Watchers ---
+
+// 데이터가 변경되면 초기화
+watch(() => props.tableData, () => {
+  initSelection()
+}, { deep: true })
+
+// 차트 타입이나 컬럼이 바뀌면 차트 갱신
+watch([chartType, selectedColumn1, selectedColumn2], () => {
+  updateChart()
+})
+
+// --- Methods ---
+
+const initSelection = () => {
+  if (numericColumns.value.length > 0) {
+    selectedColumn1.value = numericColumns.value[0]
+    if (numericColumns.value.length > 1) {
+      selectedColumn2.value = numericColumns.value[1]
+    } else {
+      selectedColumn2.value = numericColumns.value[0]
+    }
+  }
+  updateChart()
+}
+
+const getColumnIndex = (colName) => props.tableData.columns.indexOf(colName)
+
+const getColumnData = (colName) => {
+  const idx = getColumnIndex(colName)
+  if (idx === -1) return []
+  return props.tableData.data.map(row => row[idx])
+}
+
+// 차트 그리기 로직 (핵심)
 const updateChart = () => {
-  if (!selectedColumn.value) return
+  if (!selectedColumn1.value) return
+  
+  // 1. 히스토그램 (기존 로직 유지)
+  if (chartType.value === 'histogram') {
+    generateHistogram()
+  } 
+  // 2. 산점도 (Scatter)
+  else if (chartType.value === 'scatter') {
+    generateScatter()
+  } 
+  // 3. 선 그래프 (Line)
+  else if (chartType.value === 'line') {
+    generateLineChart()
+  } 
+  // 4. 파이 차트 (Pie)
+  else if (chartType.value === 'pie') {
+    generatePieChart()
+  }
+}
 
-  const colIndex = props.tableData.columns.indexOf(selectedColumn.value)
-  if (colIndex === -1) return
+// --- 개별 차트 생성 함수들 ---
 
-  // 1. 해당 컬럼의 모든 데이터 추출 (숫자로 변환)
-  const rawValues = props.tableData.data
-    .map(row => parseFloat(row[colIndex]))
-    .filter(val => !isNaN(val)) // NaN 제외
-
+const generateHistogram = () => {
+  const rawValues = getColumnData(selectedColumn1.value)
+    .map(v => parseFloat(v)).filter(v => !isNaN(v))
+  
   if (rawValues.length === 0) return
 
-  // 2. 히스토그램 구간(Bin) 계산
   const min = Math.min(...rawValues)
   const max = Math.max(...rawValues)
-  const binCount = 15 // 구간 개수 (적절히 조절 가능)
+  const binCount = 15
   const step = (max - min) / binCount
   
   const labels = []
   const data = new Array(binCount).fill(0)
 
-  // X축 라벨 생성 (예: "10~20")
   for (let i = 0; i < binCount; i++) {
     const start = min + (step * i)
     const end = min + (step * (i + 1))
-    labels.push(`${start.toFixed(1)} ~ ${end.toFixed(1)}`)
+    labels.push(`${start.toFixed(1)}~${end.toFixed(1)}`)
   }
 
-  // 데이터 카운팅
   rawValues.forEach(val => {
-    let binIndex = Math.floor((val - min) / step)
-    if (binIndex >= binCount) binIndex = binCount - 1 // 최대값은 마지막 구간에 포함
-    data[binIndex]++
+    let idx = Math.floor((val - min) / step)
+    if (idx >= binCount) idx = binCount - 1
+    data[idx]++
   })
 
-  // 3. 차트 데이터 바인딩
   chartData.value = {
-    labels: labels,
-    datasets: [
-      {
-        label: 'Count',
-        backgroundColor: 'rgba(54, 162, 235, 0.6)', // 파란색 계열
-        borderColor: 'rgba(54, 162, 235, 1)',
-        borderWidth: 1,
-        data: data,
-        barPercentage: 1.0, // 히스토그램처럼 막대 붙이기
-        categoryPercentage: 1.0
-      }
-    ]
+    labels,
+    datasets: [{
+      label: selectedColumn1.value,
+      backgroundColor: '#42b983',
+      data: data,
+      barPercentage: 1.0,
+      categoryPercentage: 1.0
+    }]
   }
 }
+
+const generateScatter = () => {
+  if (!selectedColumn2.value) return
+
+  const xValues = getColumnData(selectedColumn1.value)
+  const yValues = getColumnData(selectedColumn2.value)
+
+  // {x: 1, y: 2} 형태의 데이터 생성
+  const dataPoints = xValues.map((x, i) => ({
+    x: parseFloat(x),
+    y: parseFloat(yValues[i])
+  })).filter(p => !isNaN(p.x) && !isNaN(p.y))
+
+  // 데이터가 너무 많으면 1000개로 샘플링 (성능 최적화)
+  const finalData = dataPoints.length > 1000 
+    ? dataPoints.slice(0, 1000) 
+    : dataPoints
+
+  chartData.value = {
+    datasets: [{
+      label: `${selectedColumn1.value} vs ${selectedColumn2.value}`,
+      backgroundColor: '#ff6384',
+      data: finalData
+    }]
+  }
+}
+
+const generateLineChart = () => {
+  const rawValues = getColumnData(selectedColumn1.value)
+    .map(v => parseFloat(v)).filter(v => !isNaN(v))
+  
+  // 데이터가 너무 많으면 앞부분 100개만 표시 (예시)
+  const limit = 100
+  const displayData = rawValues.slice(0, limit)
+  const labels = Array.from({length: displayData.length}, (_, i) => i + 1)
+
+  chartData.value = {
+    labels,
+    datasets: [{
+      label: selectedColumn1.value,
+      borderColor: '#36a2eb',
+      backgroundColor: 'rgba(54, 162, 235, 0.2)',
+      data: displayData,
+      tension: 0.1,
+      fill: true
+    }]
+  }
+}
+
+const generatePieChart = () => {
+  const rawValues = getColumnData(selectedColumn1.value)
+  
+  // 빈도수 계산 (Counter)
+  const counts = {}
+  rawValues.forEach(val => {
+    const key = String(val) // 범주형 처리
+    counts[key] = (counts[key] || 0) + 1
+  })
+
+  // 정렬 및 상위 10개 추출
+  const sortedEntries = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10) // Top 10만 표시
+
+  const labels = sortedEntries.map(e => e[0])
+  const data = sortedEntries.map(e => e[1])
+
+  // 랜덤 색상 생성
+  const colors = labels.map(() => `hsl(${Math.random() * 360}, 70%, 50%)`)
+
+  chartData.value = {
+    labels,
+    datasets: [{
+      backgroundColor: colors,
+      data: data
+    }]
+  }
+}
+
+// 차트 옵션 (공통 및 타입별 미세 조정 가능)
+const chartOptions = computed(() => {
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: chartType.value !== 'histogram' }, // 히스토그램만 범례 숨김
+    }
+  }
+
+  if (chartType.value === 'scatter') {
+    options.scales = {
+      x: { 
+        type: 'linear', 
+        position: 'bottom',
+        title: { display: true, text: selectedColumn1.value }
+      },
+      y: { 
+        title: { display: true, text: selectedColumn2.value } 
+      }
+    }
+  }
+  
+  return options
+})
+
+onMounted(() => {
+  initSelection()
+})
 </script>
 
 <style scoped>
 .chart-container {
   width: 100%;
   height: 100%;
-  min-height: 400px;
+  min-height: 450px; /* 높이 약간 증가 */
   display: flex;
   flex-direction: column;
 }
 
 .chart-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   margin-bottom: 15px;
-  padding-bottom: 10px;
   border-bottom: 1px solid #444;
+  padding-bottom: 15px;
 }
 
-h3 {
-  margin: 0;
+.chart-header h3 {
+  margin: 0 0 15px 0;
   color: #fff;
-  font-size: 1.1rem;
+  font-size: 1.2rem;
 }
 
-.controls select {
-  padding: 5px 10px;
+.controls-row {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap; /* 화면 작을 때 줄바꿈 */
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.control-group label {
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+.form-select {
+  padding: 6px 10px;
   border-radius: 4px;
   border: 1px solid #555;
   background-color: #333;
   color: #fff;
+  min-width: 150px;
 }
 
 .canvas-wrapper {
   flex: 1;
   position: relative;
-  min-height: 300px;
+  min-height: 350px;
+  background-color: #232323; /* 차트 배경을 살짝 밝게 */
+  border-radius: 8px;
+  padding: 10px;
 }
 
 .no-data {
