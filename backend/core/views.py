@@ -7,6 +7,11 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, JSONParser
 
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score, classification_report, mean_squared_error, r2_score
+
 # --- 헬퍼 함수 ---
 def _analyze_dataframe(df):
     """
@@ -239,3 +244,105 @@ class ProcessDataView(APIView):
             import traceback
             traceback.print_exc()
             return Response({"error": f"데이터 처리 중 서버 오류 발생: {str(e)}"}, status=500)
+
+class TrainModelView(APIView):
+    parser_classes = (JSONParser,)
+
+    def post(self, request, *args, **kwargs):
+        df_json = request.data.get('dataframe')
+        target_col = request.data.get('target')
+
+        if not df_json or not target_col:
+            return Response({"error": "데이터 또는 목표 컬럼이 지정되지 않았습니다."}, status=400)
+
+        try:
+            # 1. 데이터 복원
+            df = pd.read_json(io.StringIO(df_json), orient='split')
+            
+            # 2. 데이터 전처리 (ID 컬럼 제거 및 결측치 처리)
+            cols_to_drop = [c for c in df.columns if 'ID' in c or 'id' in c]
+            df_clean = df.drop(columns=cols_to_drop, errors='ignore')
+
+            # 타겟 컬럼이 결측치면 해당 행 제거 (학습 불가)
+            if target_col in df_clean.columns:
+                df_clean = df_clean.dropna(subset=[target_col])
+            
+            # 나머지 결측치는 최빈값 대체
+            for col in df_clean.columns:
+                if df_clean[col].isnull().sum() > 0:
+                    df_clean[col] = df_clean[col].fillna(df_clean[col].mode()[0])
+
+            if target_col not in df_clean.columns:
+                 return Response({"error": f"목표 컬럼 '{target_col}'을 찾을 수 없습니다."}, status=400)
+
+            # 3. 목표 변수(y) 분리 및 타입 판단 (회귀 vs 분류)
+            y = df_clean[target_col]
+            X = df_clean.drop(columns=[target_col])
+
+            # 💡 판단 로직: 수치형이고, 고유값이 20개 초과면 '회귀(Regression)'로 판단
+            is_regression = False
+            if pd.api.types.is_numeric_dtype(y):
+                if pd.api.types.is_float_dtype(y) or y.nunique() > 20:
+                    is_regression = True
+
+            # 4. 입력 변수(X) 인코딩 (범주형 -> 수치형)
+            for col in X.select_dtypes(include=['object']).columns:
+                le = LabelEncoder()
+                X[col] = le.fit_transform(X[col].astype(str))
+
+            # 목표 변수(y) 인코딩 (분류 문제일 경우에만)
+            if not is_regression and y.dtype == 'object':
+                le_y = LabelEncoder()
+                y = le_y.fit_transform(y.astype(str))
+
+            # 5. 데이터 분리
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+            # 6. 모델 학습 및 평가 (분기 처리)
+            result_data = {}
+            
+            if is_regression:
+                # --- 회귀 (Regression) ---
+                model = RandomForestRegressor(n_estimators=100, random_state=42)
+                model.fit(X_train, y_train)
+                
+                y_pred = model.predict(X_test)
+                
+                mse = mean_squared_error(y_test, y_pred)
+                r2 = r2_score(y_test, y_pred)
+                
+                result_data = {
+                    "type": "regression",
+                    "metrics": {
+                        "R2 Score (설명력)": f"{r2:.4f}",
+                        "MSE (오차제곱평균)": f"{mse:.4f}"
+                    }
+                }
+            else:
+                # --- 분류 (Classification) ---
+                model = RandomForestClassifier(n_estimators=100, random_state=42)
+                model.fit(X_train, y_train)
+                
+                y_pred = model.predict(X_test)
+                accuracy = accuracy_score(y_test, y_pred)
+                # report = classification_report(y_test, y_pred, output_dict=True) # 너무 길어서 제외 가능
+                
+                result_data = {
+                    "type": "classification",
+                    "metrics": {
+                        "Accuracy (정확도)": f"{accuracy * 100:.2f}%"
+                    }
+                }
+
+            # 7. 중요 변수 추출 (공통)
+            importances = dict(zip(X.columns, model.feature_importances_))
+            sorted_importances = dict(sorted(importances.items(), key=lambda item: item[1], reverse=True))
+            
+            result_data["feature_importances"] = sorted_importances
+            
+            return Response(result_data)
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response({"error": f"학습 중 오류 발생: {str(e)}"}, status=500)

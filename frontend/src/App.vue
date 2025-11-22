@@ -81,7 +81,7 @@
         </div>
       </div>
 
-<div class="preprocessing-frame">
+      <div class="preprocessing-frame">
         <h2>데이터 전처리</h2>
         <p>데이터를 수정/편집합니다. (실행 시 모든 통계와 테이블이 갱신됩니다.)</p>
         
@@ -103,18 +103,64 @@
 
         </div>
       </div>
-    
-    </div> </main>
+
+<div class="preprocessing-frame">
+        </div>
+
+      <div class="training-frame">
+        <h2>머신러닝 모델 학습 (Prediction)</h2>
+        <div class="train-controls">
+          <label>예측 목표(Target) 컬럼: </label>
+          <select v-model="targetColumn">
+            <option v-for="col in analysisResult.tableData.columns" :key="col" :value="col">
+              {{ col }}
+            </option>
+          </select>
+          <button class="btn-primary" @click="handleTrain" :disabled="isTraining">
+            {{ isTraining ? '학습 중...' : '모델 학습 시작 (Random Forest)' }}
+          </button>
+        </div>
+
+        <div v-if="trainResult" class="result-box">
+          <h3>🎯 학습 결과 ({{ trainResult.type === 'regression' ? '회귀 분석' : '분류 분석' }})</h3>
+          
+          <div class="metrics-container">
+            <p v-for="(value, key) in trainResult.metrics" :key="key" class="metric-item">
+              {{ key }}: <strong>{{ value }}</strong>
+            </p>
+          </div>
+          
+          <h4>중요 변수 (Feature Importance) Top 5</h4>
+          <ul>
+            <li v-for="(score, name) in topFeatures" :key="name">
+              {{ name }}: {{ (score * 100).toFixed(2) }}%
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div> 
+  </main>
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import axios from 'axios';
 import DataChart from './components/DataChart.vue'
 
 // 서버로부터 받은 테이블 데이터를 저장할 변수
 const analysisResult = ref(null);
 const isLoading = ref(false); // 로딩 상태 추가
+const targetColumn = ref('');
+const isTraining = ref(false);
+const trainResult = ref(null);
+
+// 상위 5개 중요 변수 계산
+const topFeatures = computed(() => {
+  if (!trainResult.value || !trainResult.value.feature_importances) return {};
+  return Object.fromEntries(
+    Object.entries(trainResult.value.feature_importances).slice(0, 5)
+  );
+});
 
 // 💡 1. 서버와 주고받을 원본 DataFrame(JSON 문자열)을 저장할 ref
 const fullDataJson = ref(null);
@@ -196,6 +242,29 @@ const handleProcess = async (actionName) => {
     isLoading.value = false;
   }
 };
+// 💡 [신규] 학습 요청 핸들러
+const handleTrain = async () => {
+  if (!fullDataJson.value) return alert("데이터가 없습니다.");
+  if (!targetColumn.value) return alert("예측할 목표 컬럼(Target)을 선택해주세요.");
+
+  isTraining.value = true;
+  trainResult.value = null;
+
+  try {
+    const response = await axios.post('http://localhost:8000/api/v1/train/', {
+      dataframe: fullDataJson.value,
+      target: targetColumn.value
+    });
+    
+    trainResult.value = response.data;
+    alert("모델 학습이 완료되었습니다!");
+  } catch (error) {
+    console.error(error);
+    alert(`학습 실패: ${error.response?.data?.error || error.message}`);
+  } finally {
+    isTraining.value = false;
+  }
+};
 </script>
 
 
@@ -273,6 +342,61 @@ main {
   background-color: #0056b3;
 }
 
+/* 💡 학습 프레임 스타일 */
+.training-frame {
+  grid-column: 1 / -1; /* 전체 너비 */
+  border: 1px solid #534f4f;
+  padding: 20px;
+  background-color: #1d1c1c;
+  border-radius: 5px;
+  margin-top: 20px;
+  color: white;
+}
+
+.train-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.train-controls select {
+  padding: 10px;
+  border-radius: 5px;
+  background: #333;
+  color: white;
+  border: 1px solid #555;
+}
+
+.btn-primary {
+  background-color: #28a745; /* 초록색 */
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: bold;
+}
+.btn-primary:hover { background-color: #218838; }
+.btn-primary:disabled { background-color: #555; }
+
+.result-box {
+  background: #2c2c2c;
+  padding: 20px;
+  border-radius: 8px;
+  border: 1px solid #444;
+}
+.accuracy {
+  font-size: 1.2rem;
+  color: #42b983; /* Vue Green */
+  margin-bottom: 15px;
+}
+.metric-item {
+  font-size: 1.1rem;
+  color: #42b983;
+  margin-bottom: 5px;
+}
+
 /* 제거 버튼은 붉은색 계열로 강조 */
 .btn-danger {
   background-color: #dc3545 !important;
@@ -285,7 +409,6 @@ main {
   background-color: #555;
   cursor: not-allowed;
 }
-/* --- 스타일 추가 끝 --- */
 
 /* 테이블 스크롤을 담당하는 컨테이너 */
 .table-scroll-container {
@@ -293,10 +416,6 @@ main {
   overflow: auto;    /* 가로 및 세로 스크롤 자동 생성 */
   border: 1px solid #ddd; /* 스크롤 영역 테두리 (선택 사항) */
 }
-
-/* .stats-frame .table-scroll-container {
-  max-height: 300px; 
-} */
 
 /* '기초 통계량'과 '데이터 품질' 테이블은 스크롤 없이 모두 표시 */
 .stats-frame .table-scroll-container,
