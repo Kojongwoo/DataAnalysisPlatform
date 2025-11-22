@@ -102,22 +102,36 @@
         </div>
       </div>
 
-      <div class="training-frame">
+<div class="training-frame">
         <h2>머신러닝 모델 학습 (Prediction)</h2>
+        
         <div class="train-controls">
-          <label>예측 목표(Target) 컬럼: </label>
-          <select v-model="targetColumn">
-            <option v-for="col in analysisResult.tableData.columns" :key="col" :value="col">
-              {{ col }}
-            </option>
-          </select>
+          <div class="control-group">
+            <label>예측 목표(Target): </label>
+            <select v-model="targetColumn">
+              <option v-for="col in analysisResult.tableData.columns" :key="col" :value="col">
+                {{ col }}
+              </option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <label>모델 알고리즘: </label>
+            <select v-model="selectedModel">
+              <option value="rf">Random Forest (기본)</option>
+              <option value="gb">Gradient Boosting (고성능)</option>
+              <option value="linear">Linear / Logistic Regression (기초)</option>
+              <option value="svm">SVM (복잡한 경계)</option>
+            </select>
+          </div>
+
           <button class="btn-primary" @click="handleTrain" :disabled="isTraining">
-            {{ isTraining ? '학습 중...' : '모델 학습 시작 (Random Forest)' }}
+            {{ isTraining ? '학습 중...' : '학습 시작' }}
           </button>
         </div>
 
         <div v-if="trainResult" class="result-box">
-          <h3>🎯 학습 결과 ({{ trainResult.type === 'regression' ? '회귀 분석' : '분류 분석' }})</h3>
+          <h3>🎯 학습 결과 ({{ trainResult.type === 'regression' ? '회귀' : '분류' }} - {{ trainResult.model }})</h3>
           
           <div class="metrics-container">
             <p v-for="(value, key) in trainResult.metrics" :key="key" class="metric-item">
@@ -125,15 +139,20 @@
             </p>
           </div>
           
-          <h4>중요 변수 (Feature Importance) Top 5</h4>
-          <ul>
-            <li v-for="(score, name) in topFeatures" :key="name">
-              {{ name }}: {{ (score * 100).toFixed(2) }}%
-            </li>
-          </ul>
+          <div v-if="Object.keys(trainResult.feature_importances || {}).length > 0">
+            <h4>중요 변수 (Feature Importance) Top 5</h4>
+            <ul>
+              <li v-for="(score, name) in Object.fromEntries(Object.entries(trainResult.feature_importances).slice(0, 5))" :key="name">
+                {{ name }}: {{ (score * 100).toFixed(2) }} (Score)
+              </li>
+            </ul>
+          </div>
+          <div v-else>
+            <p class="no-importance">⚠️ 이 모델은 변수 중요도를 제공하지 않습니다.</p>
+          </div>
         </div>
-      </div>
-    </div> 
+      </div> 
+    </div>
   </main>
 </template>
 
@@ -148,6 +167,7 @@ const isLoading = ref(false); // 로딩 상태 추가
 const targetColumn = ref('');
 const isTraining = ref(false);
 const trainResult = ref(null);
+const selectedModel = ref('rf');
 
 // 상위 5개 중요 변수 계산
 const topFeatures = computed(() => {
@@ -237,7 +257,8 @@ const handleProcess = async (actionName) => {
     isLoading.value = false;
   }
 };
-// 💡 [신규] 학습 요청 핸들러
+
+// 학습 요청 핸들러
 const handleTrain = async () => {
   if (!fullDataJson.value) return alert("데이터가 없습니다.");
   if (!targetColumn.value) return alert("예측할 목표 컬럼(Target)을 선택해주세요.");
@@ -248,7 +269,8 @@ const handleTrain = async () => {
   try {
     const response = await axios.post('http://localhost:8000/api/v1/train/', {
       dataframe: fullDataJson.value,
-      target: targetColumn.value
+      target: targetColumn.value,
+      model_name: selectedModel.value // 💡 선택된 모델명 전송
     });
     
     trainResult.value = response.data;
@@ -417,6 +439,22 @@ main {
 .quality-frame .table-scroll-container {
   max-height: none; /* 높이 제한 없음 */
   overflow: auto; /* 내용이 넘칠 경우에만 스크롤 (주로 가로 스크롤) */
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  margin-right: 15px;
+}
+.control-group label {
+  font-size: 0.8rem;
+  color: #aaa;
+  margin-bottom: 4px;
+}
+.no-importance {
+  color: #888;
+  font-style: italic;
+  margin-top: 10px;
 }
 
 /* 간단한 스타일링 */

@@ -6,12 +6,15 @@ import numpy as np
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, JSONParser
-from django.http import HttpResponse
 
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, classification_report, mean_squared_error, r2_score
+
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingClassifier, GradientBoostingRegressor
+from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.svm import SVC, SVR
 
 # --- 헬퍼 함수 ---
 def _analyze_dataframe(df):
@@ -252,6 +255,7 @@ class TrainModelView(APIView):
     def post(self, request, *args, **kwargs):
         df_json = request.data.get('dataframe')
         target_col = request.data.get('target')
+        model_name = request.data.get('model_name', 'rf') # 💡 기본값 'rf' (Random Forest)
 
         if not df_json or not target_col:
             return Response({"error": "데이터 또는 목표 컬럼이 지정되지 않았습니다."}, status=400)
@@ -264,34 +268,34 @@ class TrainModelView(APIView):
             cols_to_drop = [c for c in df.columns if 'ID' in c or 'id' in c]
             df_clean = df.drop(columns=cols_to_drop, errors='ignore')
 
-            # 타겟 컬럼이 결측치면 해당 행 제거 (학습 불가)
             if target_col in df_clean.columns:
                 df_clean = df_clean.dropna(subset=[target_col])
             
-            # 나머지 결측치는 최빈값 대체
             for col in df_clean.columns:
                 if df_clean[col].isnull().sum() > 0:
-                    df_clean[col] = df_clean[col].fillna(df_clean[col].mode()[0])
+                    # 수치형이면 평균, 아니면 최빈값 (간단한 처리)
+                    if pd.api.types.is_numeric_dtype(df_clean[col]):
+                        df_clean[col] = df_clean[col].fillna(df_clean[col].mean())
+                    else:
+                        df_clean[col] = df_clean[col].fillna(df_clean[col].mode()[0])
 
             if target_col not in df_clean.columns:
                  return Response({"error": f"목표 컬럼 '{target_col}'을 찾을 수 없습니다."}, status=400)
 
-            # 3. 목표 변수(y) 분리 및 타입 판단 (회귀 vs 분류)
+            # 3. 목표 변수(y) 분리 및 타입 판단
             y = df_clean[target_col]
             X = df_clean.drop(columns=[target_col])
 
-            # 💡 판단 로직: 수치형이고, 고유값이 20개 초과면 '회귀(Regression)'로 판단
             is_regression = False
             if pd.api.types.is_numeric_dtype(y):
                 if pd.api.types.is_float_dtype(y) or y.nunique() > 20:
                     is_regression = True
 
-            # 4. 입력 변수(X) 인코딩 (범주형 -> 수치형)
+            # 4. 인코딩
             for col in X.select_dtypes(include=['object']).columns:
                 le = LabelEncoder()
                 X[col] = le.fit_transform(X[col].astype(str))
 
-            # 목표 변수(y) 인코딩 (분류 문제일 경우에만)
             if not is_regression and y.dtype == 'object':
                 le_y = LabelEncoder()
                 y = le_y.fit_transform(y.astype(str))
@@ -299,14 +303,21 @@ class TrainModelView(APIView):
             # 5. 데이터 분리
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-            # 6. 모델 학습 및 평가 (분기 처리)
-            result_data = {}
+            # 6. 💡 모델 선택 및 학습 (분기 처리)
+            model = None
             
             if is_regression:
                 # --- 회귀 (Regression) ---
-                model = RandomForestRegressor(n_estimators=100, random_state=42)
-                model.fit(X_train, y_train)
+                if model_name == 'linear':
+                    model = LinearRegression()
+                elif model_name == 'gb':
+                    model = GradientBoostingRegressor(n_estimators=100, random_state=42)
+                elif model_name == 'svm':
+                    model = SVR()
+                else: # default 'rf'
+                    model = RandomForestRegressor(n_estimators=100, random_state=42)
                 
+                model.fit(X_train, y_train)
                 y_pred = model.predict(X_test)
                 
                 mse = mean_squared_error(y_test, y_pred)
@@ -314,6 +325,7 @@ class TrainModelView(APIView):
                 
                 result_data = {
                     "type": "regression",
+                    "model": model_name,
                     "metrics": {
                         "R2 Score (설명력)": f"{r2:.4f}",
                         "MSE (오차제곱평균)": f"{mse:.4f}"
@@ -321,25 +333,49 @@ class TrainModelView(APIView):
                 }
             else:
                 # --- 분류 (Classification) ---
-                model = RandomForestClassifier(n_estimators=100, random_state=42)
+                if model_name == 'logistic':
+                    model = LogisticRegression(max_iter=1000)
+                elif model_name == 'gb':
+                    model = GradientBoostingClassifier(n_estimators=100, random_state=42)
+                elif model_name == 'svm':
+                    model = SVC()
+                else: # default 'rf'
+                    model = RandomForestClassifier(n_estimators=100, random_state=42)
+
                 model.fit(X_train, y_train)
-                
                 y_pred = model.predict(X_test)
                 accuracy = accuracy_score(y_test, y_pred)
-                # report = classification_report(y_test, y_pred, output_dict=True) # 너무 길어서 제외 가능
                 
                 result_data = {
                     "type": "classification",
+                    "model": model_name,
                     "metrics": {
                         "Accuracy (정확도)": f"{accuracy * 100:.2f}%"
                     }
                 }
 
-            # 7. 중요 변수 추출 (공통)
-            importances = dict(zip(X.columns, model.feature_importances_))
-            sorted_importances = dict(sorted(importances.items(), key=lambda item: item[1], reverse=True))
+            # 7. 💡 중요 변수 추출 (모델별 속성 차이 처리)
+            importances = {}
             
-            result_data["feature_importances"] = sorted_importances
+            # (1) 트리 기반 모델 (feature_importances_)
+            if hasattr(model, 'feature_importances_'):
+                importances = dict(zip(X.columns, model.feature_importances_))
+            
+            # (2) 선형 모델 (coef_) - 절대값 크기로 중요도 가늠
+            elif hasattr(model, 'coef_'):
+                # 다중 클래스일 경우 첫 번째 클래스 기준 혹은 평균 사용 등 복잡하지만, 여기선 단순화
+                coefs = model.coef_
+                if coefs.ndim > 1: 
+                    coefs = coefs[0] # 첫 번째 클래스 또는 차원
+                importances = dict(zip(X.columns, np.abs(coefs)))
+            
+            # (3) SVM 등 지원하지 않는 경우 -> 빈 딕셔너리
+
+            if importances:
+                sorted_importances = dict(sorted(importances.items(), key=lambda item: item[1], reverse=True))
+                result_data["feature_importances"] = sorted_importances
+            else:
+                result_data["feature_importances"] = {}
             
             return Response(result_data)
 
