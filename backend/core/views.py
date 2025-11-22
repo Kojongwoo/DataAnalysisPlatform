@@ -190,6 +190,42 @@ class ProcessDataView(APIView):
             elif action == 'fill_na_zero':
                 df.fillna(0, inplace=True)
                 print("모든 컬럼 0으로 대체 완료")
+
+            # --- 💡 [신규 추가] 이상치 처리 로직 ---
+            elif action == 'drop_outliers':
+                # IQR 방식으로 이상치 식별 후 제거
+                numeric_cols = df.select_dtypes(include=[np.number]).columns
+                Q1 = df[numeric_cols].quantile(0.25)
+                Q3 = df[numeric_cols].quantile(0.75)
+                IQR = Q3 - Q1
+                
+                # 조건: (값 < Lower) 또는 (값 > Upper) 인 데이터가 하나라도 있는 행 제거
+                lower_bound = Q1 - 1.5 * IQR
+                upper_bound = Q3 + 1.5 * IQR
+                
+                # any(axis=1)은 "각 행에 대해 하나라도 True가 있으면 True"
+                outlier_condition = ((df[numeric_cols] < lower_bound) | (df[numeric_cols] > upper_bound)).any(axis=1)
+                
+                original_rows = len(df)
+                df = df[~outlier_condition] # Outlier가 아닌 것만 남김
+                print(f"이상치 포함 행 제거: {original_rows} -> {len(df)}")
+
+            elif action == 'cap_outliers':
+                # 윈저라이징 (Capping): 이상치를 상한값/하한값으로 대체
+                numeric_cols = df.select_dtypes(include=[np.number]).columns
+                Q1 = df[numeric_cols].quantile(0.25)
+                Q3 = df[numeric_cols].quantile(0.75)
+                IQR = Q3 - Q1
+                
+                lower_bound = Q1 - 1.5 * IQR
+                upper_bound = Q3 + 1.5 * IQR
+                
+                for col in numeric_cols:
+                    # 하한값보다 작은 값은 하한값으로 치환
+                    df[col] = np.where(df[col] < lower_bound[col], lower_bound[col], df[col])
+                    # 상한값보다 큰 값은 상한값으로 치환
+                    df[col] = np.where(df[col] > upper_bound[col], upper_bound[col], df[col])
+                print("이상치 윈저라이징(Capping) 완료")
             
             else:
                 return Response({"error": "알 수 없는 작업 요청입니다."}, status=400)

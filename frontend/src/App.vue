@@ -1,6 +1,8 @@
 <template>
   <main>
-    <h1>데이터 파일 업로드</h1>
+    <h1>데이터 분석 웹사이트</h1>
+    <div>==========================</div>
+    <h2>데이터 파일 업로드</h2>
     <input type="file" @change="handleFileUpload">
 
     <div v-if="isLoading" class="loading-spinner">
@@ -76,27 +78,20 @@
         
         <div class="button-group">
           <div class="action-section">
-            <h3>제거 (Deletion)</h3>
-            <button class="btn-danger" @click="handleProcess('drop_na')" :disabled="isLoading">
-              결측치 행 제거
-            </button>
+            <h3>결측치 처리</h3>
+            <button class="btn-danger" @click="handleProcess('drop_na')" :disabled="isLoading">결측치 행 제거</button>
+            <button @click="handleProcess('fill_na_mean')" :disabled="isLoading">평균값으로 채우기(숫자형)</button>
+            <button @click="handleProcess('fill_na_median')" :disabled="isLoading">중앙값으로 채우기(숫자형)</button>
+            <button @click="handleProcess('fill_na_mode')" :disabled="isLoading">최빈값으로 채우기(범주형)</button>
+            <button @click="handleProcess('fill_na_zero')" :disabled="isLoading">0으로 채우기</button>
           </div>
 
           <div class="action-section">
-            <h3>대체 (Imputation)</h3>
-            <button @click="handleProcess('fill_na_mean')" :disabled="isLoading">
-              평균값 (숫자형)
-            </button>
-            <button @click="handleProcess('fill_na_median')" :disabled="isLoading">
-              중앙값 (숫자형)
-            </button>
-            <button @click="handleProcess('fill_na_mode')" :disabled="isLoading">
-              최빈값 (범주형/모두)
-            </button>
-            <button @click="handleProcess('fill_na_zero')" :disabled="isLoading">
-              0으로 채우기
-            </button>
+            <h3>이상치 처리</h3>
+            <button class="btn-danger" @click="handleProcess('drop_outliers')" :disabled="isLoading">이상치 행 제거</button>
+            <button @click="handleProcess('cap_outliers')" :disabled="isLoading">상 / 하한값 대체</button>
           </div>
+
         </div>
       </div>
     
@@ -194,27 +189,30 @@ const handleProcess = async (actionName) => {
 </script>
 
 <style>
+/* 💡 main 태그가 화면 전체를 쓰도록 수정 */
 main {
-  max-width: 90vw;
-  margin: 20px auto;
+  width: 100%;
+  max-width: 100%; /* 90vw 등 제한 제거 */
+  margin: 0;
+  padding: 0 20px; /* 좌우 여백 살짝 */
 }
 
 .analysis-layout {
   display: grid;
-  /* 1fr 2fr : 통계량 틀이 1, 데이터 틀이 2의 비율로 공간 차지 */
-  gap: 20px; /* 두 틀 사이의 간격 */
+  gap: 20px;
   margin-top: 20px;
+  width: 100%; /* 레이아웃도 꽉 채우기 */
 }
-/* 로딩 스피너 (간단) */
+/* 로딩 스피너 */
 .loading-spinner {
   margin-top: 20px;
   font-size: 1.2em;
   color: #fbf3f3ff;
 }
 
-/* 틀 공통 스타일 */
-.table-frame, .stats-frame, .quality-frame {
-  border: 1px solid #534f4f; /* 프레임 테두리*/
+/* 프레임 스타일 유지 */
+.table-frame, .stats-frame, .quality-frame, .chart-frame, .preprocessing-frame {
+  border: 1px solid #534f4f;
   padding: 15px;
   margin-top: 20px;
   background-color: #1d1c1c;
@@ -254,10 +252,10 @@ main {
   background-color: #007bff;
   color: white;
   border: none;
-  padding: 8px 12px;
-  border-radius: 4px;
+  padding: 14px 20px;
+  border-radius: 8px;
   cursor: pointer;
-  font-weight: 0.9rem;
+  font-weight: bold;
   transition: background 0.2s;
 }
 .preprocessing-frame button:hover {

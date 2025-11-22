@@ -1,9 +1,11 @@
 @import './base.css';
 
+/* 기본 앱 컨테이너 설정 */
 #app {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
+  width: 100%;
+  max-width: 100%; /* 너비 제한 해제 */
+  margin: 0;
+  padding: 20px;
   font-weight: normal;
 }
 
@@ -21,15 +23,20 @@ a,
   }
 }
 
+/* 💡 핵심 수정 사항 */
+/* 데스크탑 환경에서 강제로 중앙 정렬되거나 그리드로 나뉘는 것을 막습니다. */
 @media (min-width: 1024px) {
   body {
-    display: flex;
-    place-items: center;
+    display: block !important; /* flex(중앙정렬) 해제 */
+    place-items: unset !important;
+    min-width: 100%;
   }
 
   #app {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    padding: 0 2rem;
+    display: block !important; /* grid 해제 */
+    padding: 20px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
   }
 }
