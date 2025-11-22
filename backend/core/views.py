@@ -117,7 +117,6 @@ class ProcessDataView(APIView):
     parser_classes = (JSONParser,)
     
     def post(self, request, *args, **kwargs):
-        # 💡 1. 세션에서 불러오는 대신, request.data에서 직접 받기
         df_json = request.data.get('dataframe')
         action = request.data.get('action')
 
@@ -125,26 +124,39 @@ class ProcessDataView(APIView):
             return Response({"error": "DataFrame이 요청에 포함되지 않았습니다."}, status=400)
         
         try:
-            # 2. DataFrame 복원
+            # DataFrame 복원
             df = pd.read_json(io.StringIO(df_json), orient='split')
+            original_rows = len(df)
             
-            # 3. 작업(action)에 따라 데이터 처리
+            # --- 💡 수정 및 추가된 부분 시작 ---
             if action == 'drop_na':
-                original_rows = len(df)
                 df = df.dropna()
-                processed_rows = len(df)
-                print(f"결측치 행 제거: {original_rows} -> {processed_rows} (총 {original_rows - processed_rows}개 행 제거)")
+                print(f"결측치 행 제거: {original_rows} -> {len(df)}")
+            
+            elif action == 'fill_na_mean':  # 1. 평균값으로 채우기
+                # 수치형 컬럼만 선택
+                numeric_cols = df.select_dtypes(include=[np.number]).columns
+                # 수치형 컬럼의 결측치를 해당 컬럼의 '평균'으로 채움
+                df[numeric_cols] = df[numeric_cols].fillna(df[numeric_cols].mean())
+                print("결측치 평균값 대체 완료")
+
+            elif action == 'fill_na_median': # 2. 중앙값으로 채우기
+                numeric_cols = df.select_dtypes(include=[np.number]).columns
+                # 수치형 컬럼의 결측치를 해당 컬럼의 '중앙값'으로 채움
+                df[numeric_cols] = df[numeric_cols].fillna(df[numeric_cols].median())
+                print("결측치 중앙값 대체 완료")
+
+            elif action == 'fill_na_zero':   # 3. 0으로 채우기
+                # 모든 컬럼의 결측치를 0으로 채움
+                df.fillna(0, inplace=True)
+                print("결측치 0으로 대체 완료")
             
             else:
                 return Response({"error": "알 수 없는 작업 요청입니다."}, status=400)
+            # --- 💡 수정 및 추가된 부분 끝 ---
 
-            # 💡 4. 세션에 덮어쓰는 코드 (삭제)
-            # request.session['dataframe'] = df.to_json(orient='split', force_ascii=False)
-            
-            # 5. 헬퍼 함수를 사용해 갱신된 분석 결과 생성
+            # 갱신된 분석 결과 생성
             response_data = _analyze_dataframe(df)
-            
-            # 💡 6. 갱신된 원본 DataFrame(JSON)을 응답에 추가
             response_data['fullData'] = df.to_json(orient='split', force_ascii=False)
             
             return Response(response_data)

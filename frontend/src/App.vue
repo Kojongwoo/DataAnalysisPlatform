@@ -70,14 +70,31 @@
         </div>
       </div>
 
-      <div class="preprocessing-frame">
+<div class="preprocessing-frame">
         <h2>데이터 전처리</h2>
         <p>데이터를 수정/편집합니다. (실행 시 모든 통계와 테이블이 갱신됩니다.)</p>
+        
         <div class="button-group">
-          <button @click="handleProcess('drop_na')" :disabled="isLoading">
-            결측치가 있는 행 전체 제거
-          </button>
+          <div class="action-section">
+            <h3>제거 (Deletion)</h3>
+            <button class="btn-danger" @click="handleProcess('drop_na')" :disabled="isLoading">
+              결측치 행 제거
+            </button>
           </div>
+
+          <div class="action-section">
+            <h3>대체 (Imputation)</h3>
+            <button @click="handleProcess('fill_na_mean')" :disabled="isLoading">
+              평균값으로 채우기
+            </button>
+            <button @click="handleProcess('fill_na_median')" :disabled="isLoading">
+              중앙값으로 채우기
+            </button>
+            <button @click="handleProcess('fill_na_zero')" :disabled="isLoading">
+              0으로 채우기
+            </button>
+          </div>
+        </div>
       </div>
     
     </div> </main>
@@ -215,20 +232,43 @@ main {
 }
 .button-group {
   display: flex;
-  gap: 10px;
+  gap: 20px;
+}
+.action-section {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.action-section h3 {
+  font-size: 0.9rem;
+  color: #888;
+  margin-bottom: 5px;
+  border-bottom: 1px solid #444;
+  padding-bottom: 3px;
 }
 .preprocessing-frame button {
   background-color: #007bff;
   color: white;
   border: none;
-  padding: 10px 15px;
+  padding: 8px 12px;
   border-radius: 4px;
   cursor: pointer;
-  font-weight: bold;
+  font-weight: 0.9rem;
+  transition: background 0.2s;
 }
 .preprocessing-frame button:hover {
   background-color: #0056b3;
 }
+
+/* 제거 버튼은 붉은색 계열로 강조 */
+.btn-danger {
+  background-color: #dc3545 !important;
+}
+.btn-danger:hover {
+  background-color: #a71d2a !important;
+}
+
 .preprocessing-frame button:disabled {
   background-color: #555;
   cursor: not-allowed;
