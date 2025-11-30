@@ -20,12 +20,18 @@ from sklearn.svm import SVC, SVR
 def _analyze_dataframe(df):
     """
     주어진 DataFrame을 분석하여 table, stats, quality JSON을 반환합니다.
+    **성능 최적화**: 프론트엔드 렌더링 부하를 줄이기 위해 tableData는 상위 100개 행만 반환합니다.
     """
-    # 1. 전체 테이블 데이터
-    table_json = df.astype(object).fillna('-').to_json(orient='split', force_ascii=False)
+# --- 1. 전체 테이블 데이터 (Preview용 100개만) ---
+    # 💡 전체 데이터를 다 보내면 브라우저가 멈춥니다. 상위 100개만 자릅니다.
+    df_preview = df.head(100).copy()
+    
+    # 💡 [Warning 해결] fillna 대신 where를 사용하여 안전하게 문자열('-')로 변환
+    df_preview = df_preview.astype(object).where(pd.notnull(df_preview), '-')
+    
+    table_json = df_preview.to_json(orient='split', force_ascii=False)
 
-    # --- 💡 2. 기초 통계량 데이터 (수정됨) ---
-    # (1) 기본 describe 수행
+    # --- 2. 기초 통계량 데이터 ---
     stats_df = df.describe(include='all')
     
     # (2) 데이터 타입(Data Type) 행 생성
@@ -39,20 +45,18 @@ def _analyze_dataframe(df):
             
     # DataFrame으로 변환 (인덱스 이름은 'Data Type')
     dtype_df = pd.DataFrame([dtype_data], index=['Data Type'])
-    
-    # (3) 기존 통계량 맨 위에 'Data Type' 행 합치기
     stats_df = pd.concat([dtype_df, stats_df])
     
-    # (4) 인덱스 초기화 및 JSON 변환 (기존 로직)
-    stats_df = stats_df.reset_index() # 'index' 컬럼이 생성됨 (Data Type, count, mean...)
-    stats_df.rename(columns={'index': '구분'}, inplace=True) # 보기 좋게 이름 변경
+    stats_df = stats_df.reset_index()
+    stats_df.rename(columns={'index': '구분'}, inplace=True)
     
-    stats_json = stats_df.astype(object).fillna('-').to_json(orient='split', force_ascii=False)
+    # 💡 [Warning 해결] stats_df 처리
+    stats_df = stats_df.astype(object).where(pd.notnull(stats_df), '-')
+    stats_json = stats_df.to_json(orient='split', force_ascii=False)
     # --------------------------------------
 
     # 3. 데이터 품질 데이터
     total_rows = len(df)
-    
     missing_counts = df.isnull().sum()
 
     if total_rows > 0:
