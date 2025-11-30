@@ -133,6 +133,55 @@
         <div v-if="trainResult" class="result-box">
           <h3>🎯 학습 결과 ({{ trainResult.type === 'regression' ? '회귀' : '분류' }} - {{ trainResult.model }})</h3>
           
+          <div class="ai-comment-box" v-if="trainResult.explanation">
+            <div class="ai-avatar">🤖</div>
+            <div class="ai-text">
+              <h4>AI 분석가의 한마디</h4>
+              <p v-html="trainResult.explanation"></p>
+            </div>
+          </div>
+
+        <div v-if="trainResult.samples && trainResult.samples.length > 0" class="sample-section">
+            <h4>🔎 실전 예측 시뮬레이션 (Test Data 10개)</h4>
+            <p class="sample-desc">
+              AI가 처음 보는 데이터(테스트용)를 어떻게 맞췄는지 확인해보세요.
+            </p>
+
+            <div class="table-scroll-container sample-table-container">
+              <table class="sample-table">
+                <thead>
+                  <tr>
+                    <th>No.</th>
+                    <th>실제 정답 (Actual)</th>
+                    <th>AI 예측값 (Predicted)</th>
+                    <th>
+                      {{ trainResult.type === 'regression' ? '오차 (Difference)' : '채점 결과' }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in trainResult.samples" :key="item.id">
+                    <td>{{ item.id }}</td>
+                    <td class="bold-text">{{ item.actual }}</td>
+                    <td class="bold-text">{{ item.predicted }}</td>
+                    
+                    <td v-if="trainResult.type === 'regression'">
+                      <span :class="{'good-pred': item.is_correct < 5, 'bad-pred': item.is_correct >= 20}">
+                        {{ item.is_correct }} 
+                        <span v-if="item.is_correct === 0">(완벽!)</span>
+                      </span>
+                    </td>
+
+                    <td v-else>
+                      <span v-if="item.is_correct" class="badge-success">✅ 정답</span>
+                      <span v-else class="badge-fail">❌ 오답</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <div class="metrics-container">
             <p v-for="(value, key) in trainResult.metrics" :key="key" class="metric-item">
               {{ key }}: <strong>{{ value }}</strong>
@@ -456,6 +505,114 @@ main {
   font-style: italic;
   margin-top: 10px;
 }
+
+/* AI 코멘트 박스 스타일 */
+.ai-comment-box {
+  background-color: #2c3e50; /* 어두운 남색 배경 */
+  border: 1px solid #42b983; /* Vue Green 테두리 */
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 20px;
+  display: flex;
+  gap: 15px;
+  align-items: flex-start;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.ai-avatar {
+  font-size: 2.5rem;
+  background-color: #1a1a1a;
+  padding: 10px;
+  border-radius: 50%;
+  line-height: 1;
+}
+
+.ai-text {
+  flex: 1;
+}
+
+.ai-text h4 {
+  color: #42b983;
+  margin: 0 0 10px 0;
+  font-size: 1.1rem;
+  font-weight: bold;
+}
+
+.ai-text p {
+  color: #e0e0e0;
+  font-size: 1rem;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* 중요 키워드 강조를 위한 스타일 (v-html 내부에서 사용됨) */
+.ai-text strong {
+  color: #ffeb3b; /* 노란색 강조 */
+  font-weight: bold;
+}
+
+.ai-text b {
+  color: #64b5f6; /* 파란색 강조 */
+}
+
+/* 샘플 테이블 스타일 */
+.sample-section {
+  margin-top: 25px;
+  border-top: 1px solid #444;
+  padding-top: 15px;
+}
+
+.sample-desc {
+  font-size: 0.9rem;
+  color: #aaa;
+  margin-bottom: 10px;
+}
+
+.sample-table-container {
+  max-height: 400px;
+  border-radius: 6px;
+  border: 1px solid #555;
+}
+
+.sample-table th {
+  background-color: #333;
+  color: #fff;
+  padding: 10px;
+  font-size: 0.9rem;
+}
+
+.sample-table td {
+  padding: 10px;
+  border-bottom: 1px solid #444;
+  background-color: #222; /* 기존 테이블과 구분되게 어두운 배경 */
+  color: #ddd;
+}
+
+.bold-text {
+  font-weight: bold;
+  color: #fff;
+}
+
+/* 뱃지 스타일 (분류) */
+.badge-success {
+  background-color: rgba(40, 167, 69, 0.2);
+  color: #42b983;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.badge-fail {
+  background-color: rgba(220, 53, 69, 0.2);
+  color: #ff6b6b;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+/* 텍스트 색상 (회귀) */
+.good-pred { color: #42b983; } /* 오차가 작음 */
+.bad-pred { color: #ff6b6b; }  /* 오차가 큼 */
 
 /* 간단한 스타일링 */
 table {

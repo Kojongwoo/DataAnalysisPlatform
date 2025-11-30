@@ -378,7 +378,97 @@ class TrainModelView(APIView):
                 result_data["feature_importances"] = sorted_importances
             else:
                 result_data["feature_importances"] = {}
+
+
+            # 💡 [신규 기능] 결과 해석 및 설명 생성 로직
+            explanation = []
             
+            # 1. 성능 평가 해석
+            if is_regression:
+                r2_val = r2 
+                if r2_val >= 0.8:
+                    grade = "아주 훌륭해요! 🌟"
+                    desc = f"AI가 데이터의 패턴을 아주 잘 파악했습니다. (설명력: {r2_val*100:.1f}%)<br>이 모델은 실전에서 사용해도 좋을 만큼 믿음직스럽습니다."
+                elif r2_val >= 0.5:
+                    grade = "준수합니다. ✅"
+                    desc = f"데이터의 흐름을 절반 이상 파악했습니다. (설명력: {r2_val*100:.1f}%)<br>더 많은 데이터를 모으면 성능이 훨씬 좋아질 거예요."
+                else:
+                    grade = "노력이 필요해요. 😅"
+                    desc = f"아직 예측력이 다소 낮습니다. (설명력: {r2_val*100:.1f}%)<br>데이터 전처리를 다시 하거나, 이상치를 제거해 보세요."
+                
+                explanation.append(f"<strong>[{grade}]</strong> {desc}")
+            
+            else: # 분류 (Classification)
+                acc_val = accuracy * 100
+                if acc_val >= 90:
+                    grade = "천재적인 수준이에요! 🚀"
+                    desc = f"정답률이 {acc_val:.1f}%입니다.<br>거의 모든 케이스를 정확하게 맞추고 있네요!"
+                elif acc_val >= 70:
+                    grade = "쓸만하네요! 👍"
+                    desc = f"정답률이 {acc_val:.1f}%입니다.<br>기본적인 분류는 잘 해내고 있습니다."
+                else:
+                    grade = "조금 아쉬워요. 🤔"
+                    desc = f"정답률이 {acc_val:.1f}%입니다.<br>동전 던지기보다는 낫지만, 개선이 필요해 보입니다."
+                
+                explanation.append(f"<strong>[{grade}]</strong> {desc}")
+
+            # 2. 중요 변수 해석
+            if result_data.get("feature_importances"):
+                top_3 = list(result_data["feature_importances"].keys())[:3]
+                # 변수 이름들을 강조하기 위해 []로 감싸기
+                top_3_str = ", ".join([f"<b>[{f}]</b>" for f in top_3])
+                
+                insight = f"<br><br>💡 <b>분석 팁</b>: 결과('{target_col}')를 결정짓는 가장 핵심적인 요인은 {top_3_str} 순서입니다."
+                insight += f"<br>특히 <b>'{top_3[0]}'</b> 데이터가 변하면 결과도 크게 달라질 가능성이 높으니 주목하세요!"
+                explanation.append(insight)
+            else:
+                explanation.append("<br><br>⚠️ 이 모델은 변수 중요도를 제공하지 않아, 어떤 요인이 중요한지 파악하기 어렵습니다.")
+
+            # 결과 데이터에 설명 추가
+            result_data["explanation"] = "".join(explanation)
+
+            # 💡 [신규 기능] 실제값 vs 예측값 비교 샘플 데이터 생성 (최대 10개)
+            sample_size = 10
+            # 인덱스 리셋을 위해 DataFrame/Series로 변환 보장
+            y_test_reset = pd.Series(y_test).reset_index(drop=True)
+            y_pred_reset = pd.Series(y_pred).reset_index(drop=True)
+            
+            samples = []
+            
+            # (1) 분류 문제일 경우: 라벨 복원 (0, 1 -> 'Yes', 'No')
+            if not is_regression and 'le_y' in locals() and le_y is not None:
+                # LabelEncoder가 있다면 원래 문자열로 복구
+                actual_values = le_y.inverse_transform(y_test_reset[:sample_size].astype(int))
+                pred_values = le_y.inverse_transform(y_pred_reset[:sample_size].astype(int))
+            else:
+                # 회귀거나 인코딩 안 된 경우 그대로 사용
+                actual_values = y_test_reset[:sample_size].values
+                pred_values = y_pred_reset[:sample_size].values
+
+            # (2) 샘플 리스트 생성
+            for i in range(min(len(actual_values), sample_size)):
+                actual = actual_values[i]
+                pred = pred_values[i]
+                
+                # 회귀의 경우 소수점 정리
+                if is_regression:
+                    actual = round(float(actual), 2)
+                    pred = round(float(pred), 2)
+                    diff = round(abs(actual - pred), 2) # 오차
+                    is_correct = diff  # 회귀에서는 오차값 자체
+                else:
+                    # 분류는 맞음/틀림 여부 (True/False)
+                    is_correct = (str(actual) == str(pred))
+                
+                samples.append({
+                    "id": i + 1,
+                    "actual": actual,
+                    "predicted": pred,
+                    "is_correct": is_correct # 분류: bool, 회귀: 오차값(float)
+                })
+
+            result_data["samples"] = samples
+
             return Response(result_data)
 
         except Exception as e:
