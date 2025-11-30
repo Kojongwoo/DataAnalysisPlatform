@@ -108,18 +108,19 @@ const allColumns = computed(() => {
   return props.tableData?.columns || []
 })
 
-// 3. 첫 번째 선택 박스에 표시할 컬럼 목록
 const availableColumns1 = computed(() => {
-  // 파이 차트는 범주형도 가능하므로 모든 컬럼 표시
-  if (chartType.value === 'pie') return allColumns.value
-  // 그 외(히스토그램, 산점도, 선)는 수치형만
+  // 범주형 차트(막대, 파이)는 모든 컬럼 허용 (문자열 포함)
+  if (chartType.value === 'bar-categorical' || chartType.value === 'pie') {
+    return allColumns.value
+  }
+  // 수치형 차트(히스토그램, 산점도, 선)는 수치형만 허용
   return numericColumns.value
 })
 
-// 4. 현재 차트 타입에 맞는 컴포넌트 반환
 const chartComponent = computed(() => {
   switch (chartType.value) {
     case 'histogram': return Bar
+    case 'bar-categorical': return Bar // 💡 막대 그래프 컴포넌트 재사용
     case 'scatter': return Scatter
     case 'line': return Line
     case 'pie': return Pie
@@ -127,10 +128,10 @@ const chartComponent = computed(() => {
   }
 })
 
-// 5. 라벨 텍스트 동적 변경
 const chartTypeLabel = computed(() => {
   const map = {
     histogram: 'Histogram',
+    'bar-categorical': 'Bar Chart (Count)',
     scatter: 'Scatter Plot',
     line: 'Line Chart',
     pie: 'Pie Chart'
@@ -140,12 +141,11 @@ const chartTypeLabel = computed(() => {
 
 const columnLabel1 = computed(() => {
   if (chartType.value === 'scatter') return 'X축 컬럼'
-  if (chartType.value === 'pie') return '범주(Category) 컬럼'
+  if (chartType.value === 'bar-categorical' || chartType.value === 'pie') return '범주(Category) 컬럼'
   return '대상 컬럼'
 })
 
 // --- Watchers ---
-
 // 데이터가 변경되면 초기화
 watch(() => props.tableData, () => {
   initSelection()
@@ -157,7 +157,6 @@ watch([chartType, selectedColumn1, selectedColumn2], () => {
 })
 
 // --- Methods ---
-
 const initSelection = () => {
   if (numericColumns.value.length > 0) {
     selectedColumn1.value = numericColumns.value[0]
@@ -186,6 +185,8 @@ const updateChart = () => {
   if (chartType.value === 'histogram') {
     generateHistogram()
   } 
+  // 범주형 데이터
+  else if (chartType.value === 'bar-categorical') generateBarCategoricalChart()
   // 2. 산점도 (Scatter)
   else if (chartType.value === 'scatter') {
     generateScatter()
@@ -240,6 +241,32 @@ const generateHistogram = () => {
   }
 }
 
+// 💡 [신규] 범주형 막대 그래프 생성 함수
+const generateBarCategoricalChart = () => {
+  const rawValues = getColumnData(selectedColumn1.value)
+  
+  // 빈도수 계산 (Value Counts)
+  const counts = {}
+  rawValues.forEach(val => {
+    const key = String(val) // 문자열로 통일
+    counts[key] = (counts[key] || 0) + 1
+  })
+
+  // 빈도수 내림차순 정렬 후 상위 20개만 표시 (너무 많으면 보기 힘듦)
+  const sortedEntries = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20)
+
+  chartData.value = {
+    labels: sortedEntries.map(e => e[0]), // X축: 범주 이름
+    datasets: [{
+      label: '빈도수 (Count)',
+      backgroundColor: '#36a2eb',
+      data: sortedEntries.map(e => e[1]) // Y축: 개수
+    }]
+  }
+}
+
 const generateScatter = () => {
   if (!selectedColumn2.value) return
 
@@ -290,24 +317,27 @@ const generateLineChart = () => {
 
 const generatePieChart = () => {
   const rawValues = getColumnData(selectedColumn1.value)
-  
-  // 빈도수 계산 (Counter)
   const counts = {}
   rawValues.forEach(val => {
-    const key = String(val) // 범주형 처리
+    const key = String(val)
     counts[key] = (counts[key] || 0) + 1
   })
 
-  // 정렬 및 상위 10개 추출
+  // 빈도수 상위 10개 추출
   const sortedEntries = Object.entries(counts)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 10) // Top 10만 표시
+    .slice(0, 10)
 
   const labels = sortedEntries.map(e => e[0])
   const data = sortedEntries.map(e => e[1])
 
-  // 랜덤 색상 생성
-  const colors = labels.map(() => `hsl(${Math.random() * 360}, 70%, 50%)`)
+  // 💡 [수정] 랜덤 대신 '균등 분할' 방식 적용
+  // 데이터 개수(labels.length)만큼 360도 색상환을 쪼개서 배정합니다.
+  const colors = labels.map((_, i) => {
+    // 예: 10개라면 0도, 36도, 72도... 순서로 배정되어 겹치지 않음
+    const hue = (i * 360) / labels.length 
+    return `hsl(${hue}, 70%, 50%)`
+  })
 
   chartData.value = {
     labels,
@@ -338,6 +368,13 @@ const chartOptions = computed(() => {
       y: { 
         title: { display: true, text: selectedColumn2.value } 
       }
+    }
+  }
+  // 💡 막대 그래프 축 제목 추가
+  else if (chartType.value === 'bar-categorical') {
+    options.scales = {
+      x: { title: { display: true, text: 'Categories' } },
+      y: { title: { display: true, text: 'Count' } }
     }
   }
   
