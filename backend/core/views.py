@@ -332,8 +332,9 @@ class TrainModelView(APIView):
                     }
                 }
             else:
-                # --- 분류 (Classification) ---
-                if model_name == 'logistic':
+                # --- [CASE 2] 분류 (Classification) ---
+                # 💡 핵심: 프론트에서 'linear'라고 보내도, 분류 문제라면 -> LogisticRegression 실행
+                if model_name == 'linear' or model_name == 'logistic':
                     model = LogisticRegression(max_iter=1000)
                 elif model_name == 'gb':
                     model = GradientBoostingClassifier(n_estimators=100, random_state=42)
@@ -342,6 +343,7 @@ class TrainModelView(APIView):
                 else: # default 'rf'
                     model = RandomForestClassifier(n_estimators=100, random_state=42)
 
+                # 학습 및 평가
                 model.fit(X_train, y_train)
                 y_pred = model.predict(X_test)
                 accuracy = accuracy_score(y_test, y_pred)
