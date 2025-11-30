@@ -133,6 +133,9 @@ class FileUploadView(APIView):
                     df = pd.read_csv(file_buffer, encoding='cp949')
             else:
                 return Response({"error": "지원하지 않는 파일 형식입니다."}, status=400)
+            
+            # 💡 [수정 1] 데이터셋 특화 전처리: '?'를 NaN(결측치)으로 변환
+            df.replace('?', np.nan, inplace=True)
 
             response_data = _analyze_dataframe(df)
             response_data['fullData'] = df.to_json(orient='split', force_ascii=False)
@@ -159,6 +162,8 @@ class ProcessDataView(APIView):
             
             # 1. 빈 문자열 -> NaN 치환
             df.replace("", np.nan, inplace=True)
+            # 💡 [수정 2] '?' -> NaN 치환 추가
+            df.replace("?", np.nan, inplace=True)
 
             # 2. 수치형 변환 시도
             for col in df.columns:
@@ -265,7 +270,7 @@ class TrainModelView(APIView):
             df = pd.read_json(io.StringIO(df_json), orient='split')
             
             # 2. 데이터 전처리 (ID 컬럼 제거 및 결측치 처리)
-            cols_to_drop = [c for c in df.columns if 'ID' in c or 'id' in c]
+            cols_to_drop = [c for c in df.columns if 'ID' in c or 'id' in c or 'nbr' in c]
             df_clean = df.drop(columns=cols_to_drop, errors='ignore')
 
             if target_col in df_clean.columns:
